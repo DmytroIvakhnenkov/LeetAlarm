@@ -36,7 +36,11 @@ android {
     }
     buildFeatures {
         compose = true
+
     }
+
+
+
 }
 
 dependencies {
@@ -56,7 +60,8 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    implementation("androidx.compose.material3:material3:1.1.0-alpha08")
-    implementation ("androidx.work:work-runtime-ktx:2.8.1")
+    implementation(libs.material3)
+    implementation (libs.androidx.work.runtime.ktx)
+    implementation("com.squareup.okhttp3:okhttp:4.10.0")
 
 }
