@@ -45,8 +45,12 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.json.JSONException
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Calendar
 
 
@@ -134,7 +138,6 @@ fun TimePickerScreen() {
                 Text("Pick Time") // Button label.
             }
 
-            FetchJsonScreen("https://alfa-leetcode-api.onrender.com/daily")
         }
     }
 }
@@ -166,32 +169,52 @@ fun setAlarm(context: Context, alarmManager: AlarmManager, calendar: Calendar) {
 // A BroadcastReceiver that gets triggered when the alarm goes off.
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
-        // Show a toast message when the alarm is triggered.
-        Toast.makeText(context, "Alarm Triggered!", Toast.LENGTH_LONG).show()
-    }
-}
+        // Check if the context is not null (important to avoid NullPointerException).
+        if (context != null) {
+            // Get today's date in the format used for filenames
+            val today = LocalDate.now()
+            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+            val todayFileName = "${today.format(formatter)}.txt"
 
-@Composable
-fun FetchJsonScreen(url: String) {
-    var responseText by remember { mutableStateOf("Loading...") }
+            // Access the app's internal files directory
+            val filesDir = context.filesDir
+            val files = filesDir.listFiles { file -> file.extension == "txt" } // List all .txt files
 
-    LaunchedEffect(url) {
-        fetchJson(url) { response ->
-            responseText = response
+            // Check for files other than today's file
+            var fileExists = false
+            files?.forEach { file ->
+                if (file.name == todayFileName) {
+                    fileExists = true // Today's file already exists
+                } else {
+                    file.delete() // Delete other files
+                }
+            }
+
+            if (fileExists) {
+                // Do not fetch JSON if today's file already exists
+                Toast.makeText(context, "File for today already exists. No need to fetch.", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            // URL to fetch the JSON data from. Replace this with the actual API endpoint.
+            val url = "https://alfa-leetcode-api.onrender.com/daily"
+
+            // Call the fetchJson function to perform a network request and fetch JSON data.
+            fetchJson(context, url) { result ->
+                // Handle the fetched JSON result using a callback.
+                // Since network requests happen on a background thread, UI updates must be done on the main thread.
+                android.os.Handler(context.mainLooper).post {
+                    // Show a toast message displaying the fetched data.
+                    Toast.makeText(context, "Fetched data: $result", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = androidx.compose.ui.Alignment.Center
-    ) {
-        Text(text = responseText)
-    }
 }
 
-fun fetchJson(url: String, callback: (String) -> Unit) {
+
+
+fun fetchJson(context: Context, url: String, callback: (String) -> Unit) {
     val client = OkHttpClient()
     val request = Request.Builder().url(url).build()
 
@@ -205,12 +228,80 @@ fun fetchJson(url: String, callback: (String) -> Unit) {
             if (response.isSuccessful) {
                 val body = response.body?.string() ?: "No response body"
                 try {
-                    val json = JSONObject(body)
-                    val question = json.optString("question", "No question found") // Extract "question" field
-                    callback(question)
+                    val json = try {
+                        JSONObject(body) // Try parsing the JSON object
+                    } catch (e: JSONException) {
+                        e.printStackTrace()
+                        callback("Error parsing JSON body: ${e.message}")
+                        return
+                    }
+
+                    // Extract "question" field, with a default value in case it's missing
+                    val question = try {
+                        json.optString("question", "No question found")
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        callback("Error extracting 'question' field: ${e.message}")
+                        return
+                    }
+
+                    // Clean the "question" string by removing HTML tags
+                    val cleanQuestion = try {
+                        question.replace(Regex("<[^>]*>"), "")
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        callback("Error cleaning 'question': ${e.message}")
+                        return
+                    }
+
+                    // Get today's date in the desired format
+                    val today = try {
+                        LocalDate.now()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        callback("Error getting today's date: ${e.message}")
+                        return
+                    }
+
+                    val formatter = try {
+                        DateTimeFormatter.ofPattern("yyyy-MM-dd")
+                    } catch (e: IllegalArgumentException) {
+                        e.printStackTrace()
+                        callback("Error creating date formatter: ${e.message}")
+                        return
+                    }
+
+                    val fileName = try {
+                        "${today.format(formatter)}.txt"
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        callback("Error formatting today's date: ${e.message}")
+                        return
+                    }
+
+                    // Write the clean string to the file
+                    val file = try {
+                        File(context.filesDir, fileName)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        callback("Error creating file object: ${e.message}")
+                        return
+                    }
+
+                    try {
+                        file.writeText(cleanQuestion)
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                        callback("Error writing to file: ${e.message}")
+                        return
+                    }
+
+                    // Success, pass the clean question to the callback
+                    callback(cleanQuestion)
+
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    callback("Error parsing JSON")
+                    callback("An unexpected error occurred: ${e.message}")
                 }
             } else {
                 callback("Error: ${response.code}")
