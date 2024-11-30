@@ -10,6 +10,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -52,20 +53,24 @@ import java.io.IOException
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
+import java.util.Locale
 
 
 // Main activity of the app, which is the entry point of your application.
 class MainActivity : ComponentActivity() {
+    private lateinit var ttsHelper: TextToSpeechHelper
+
     // The onCreate function is called when the activity is created.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState) // Call the parent class's onCreate method.
 
+        ttsHelper = TextToSpeechHelper(this) // Initialize TTS Helper
         enableEdgeToEdge() // Enables full-screen mode with edge-to-edge content (not shown in this code).
 
         // Set up the UI content of the activity using Jetpack Compose.
         setContent {
             LeetAlarmTheme { // Applies a custom theme (assumed to be defined elsewhere in your project).
-                TimePickerScreen() // Calls a composable function to display the screen with the time picker.
+                TimePickerScreen(ttsHelper) // Calls a composable function to display the screen with the time picker.
             }
         }
     }
@@ -73,7 +78,7 @@ class MainActivity : ComponentActivity() {
 
 // A composable function that displays the time picker screen.
 @Composable
-fun TimePickerScreen() {
+fun TimePickerScreen(ttsHelper: TextToSpeechHelper) {
     // A state variable to hold the selected time as a string (e.g., "08:30").
     var selectedTime by remember { mutableStateOf("") }
 
@@ -112,6 +117,7 @@ fun TimePickerScreen() {
         true // Use 24-hour format.
     )
 
+
     // The Scaffold composable provides a basic layout structure.
     Scaffold(
         topBar = {} // Empty top bar, but you can add an AppBar if needed.
@@ -137,6 +143,10 @@ fun TimePickerScreen() {
             Button(onClick = { timePickerDialog.show() }) {
                 Text("Pick Time") // Button label.
             }
+            Button(onClick = {ttsHelper.speak("Hello, welcome to Text-to-Speech example!")}) {
+                Text(text = "Speak")
+            }
+
 
         }
     }
@@ -170,44 +180,51 @@ fun setAlarm(context: Context, alarmManager: AlarmManager, calendar: Calendar) {
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         // Check if the context is not null (important to avoid NullPointerException).
+        Toast.makeText(context, "yes!", Toast.LENGTH_SHORT).show()
+
         if (context != null) {
-            // Get today's date in the format used for filenames
-            val today = LocalDate.now()
-            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
-            val todayFileName = "${today.format(formatter)}.txt"
+            Toast.makeText(context, "wow!", Toast.LENGTH_SHORT).show()
+            val ttsHelper = TextToSpeechHelper(context)
+            android.os.Handler(context.mainLooper).postDelayed({
+                ttsHelper.speak("booka baka")
+            }, 1000)
 
-            // Access the app's internal files directory
-            val filesDir = context.filesDir
-            val files = filesDir.listFiles { file -> file.extension == "txt" } // List all .txt files
-
-            // Check for files other than today's file
-            var fileExists = false
-            files?.forEach { file ->
-                if (file.name == todayFileName) {
-                    fileExists = true // Today's file already exists
-                } else {
-                    file.delete() // Delete other files
-                }
-            }
-
-            if (fileExists) {
-                // Do not fetch JSON if today's file already exists
-                Toast.makeText(context, "File for today already exists. No need to fetch.", Toast.LENGTH_LONG).show()
-                return
-            }
-
-            // URL to fetch the JSON data from. Replace this with the actual API endpoint.
-            val url = "https://alfa-leetcode-api.onrender.com/daily"
-
-            // Call the fetchJson function to perform a network request and fetch JSON data.
-            fetchJson(context, url) { result ->
-                // Handle the fetched JSON result using a callback.
-                // Since network requests happen on a background thread, UI updates must be done on the main thread.
-                android.os.Handler(context.mainLooper).post {
-                    // Show a toast message displaying the fetched data.
-                    Toast.makeText(context, "Fetched data: $result", Toast.LENGTH_LONG).show()
-                }
-            }
+//            // Get today's date in the format used for filenames
+//            val today = LocalDate.now()
+//            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+//            val todayFileName = "${today.format(formatter)}.txt"
+//
+//            // Access the app's internal files directory
+//            val filesDir = context.filesDir
+//            val files = filesDir.listFiles { file -> file.extension == "txt" } // List all .txt files
+//
+//            // Check for files other than today's file
+//            var fileExists = false
+//            files?.forEach { file ->
+//                if (file.name == todayFileName) {
+//                    fileExists = true // Today's file already exists
+//                } else {
+//                    file.delete() // Delete other files
+//                }
+//            }
+//            if (fileExists) {
+//                // Do not fetch JSON if today's file already exists
+//                ttsHelper.speak("File for today already exists. No need to fetch.")
+//                return
+//            }
+//
+//            // URL to fetch the JSON data from. Replace this with the actual API endpoint.
+//            val url = "https://alfa-leetcode-api.onrender.com/daily"
+//
+//            // Call the fetchJson function to perform a network request and fetch JSON data.
+//            fetchJson(context, url) { result ->
+//                // Handle the fetched JSON result using a callback.
+//                // Since network requests happen on a background thread, UI updates must be done on the main thread.
+//                android.os.Handler(context.mainLooper).post {
+//                    // Show a toast message displaying the fetched data.
+//                    ttsHelper.speak("Fetched data: $result")
+//                }
+//            }
         }
     }
 }
@@ -227,81 +244,24 @@ fun fetchJson(context: Context, url: String, callback: (String) -> Unit) {
         override fun onResponse(call: Call, response: Response) {
             if (response.isSuccessful) {
                 val body = response.body?.string() ?: "No response body"
+
                 try {
-                    val json = try {
-                        JSONObject(body) // Try parsing the JSON object
-                    } catch (e: JSONException) {
-                        e.printStackTrace()
-                        callback("Error parsing JSON body: ${e.message}")
-                        return
-                    }
+                    val json = JSONObject(body) // Parse the JSON object
+                    val question = json.optString("question", "No question found")
+                        .replace(Regex("<[^>]*>"), "") // Clean HTML tags
 
-                    // Extract "question" field, with a default value in case it's missing
-                    val question = try {
-                        json.optString("question", "No question found")
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        callback("Error extracting 'question' field: ${e.message}")
-                        return
-                    }
+                    val today = LocalDate.now()
+                    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+                    val fileName = "${today.format(formatter)}.txt"
+                    val file = File(context.filesDir, fileName)
 
-                    // Clean the "question" string by removing HTML tags
-                    val cleanQuestion = try {
-                        question.replace(Regex("<[^>]*>"), "")
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        callback("Error cleaning 'question': ${e.message}")
-                        return
-                    }
-
-                    // Get today's date in the desired format
-                    val today = try {
-                        LocalDate.now()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        callback("Error getting today's date: ${e.message}")
-                        return
-                    }
-
-                    val formatter = try {
-                        DateTimeFormatter.ofPattern("yyyy-MM-dd")
-                    } catch (e: IllegalArgumentException) {
-                        e.printStackTrace()
-                        callback("Error creating date formatter: ${e.message}")
-                        return
-                    }
-
-                    val fileName = try {
-                        "${today.format(formatter)}.txt"
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        callback("Error formatting today's date: ${e.message}")
-                        return
-                    }
-
-                    // Write the clean string to the file
-                    val file = try {
-                        File(context.filesDir, fileName)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        callback("Error creating file object: ${e.message}")
-                        return
-                    }
-
-                    try {
-                        file.writeText(cleanQuestion)
-                    } catch (e: IOException) {
-                        e.printStackTrace()
-                        callback("Error writing to file: ${e.message}")
-                        return
-                    }
+                    file.writeText(question) // Write the clean question to the file
 
                     // Success, pass the clean question to the callback
-                    callback(cleanQuestion)
-
+                    callback(question)
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    callback("An unexpected error occurred: ${e.message}")
+                    callback("An error occurred: ${e.message}")
                 }
             } else {
                 callback("Error: ${response.code}")
@@ -309,11 +269,42 @@ fun fetchJson(context: Context, url: String, callback: (String) -> Unit) {
         }
     })
 }
-// A preview function to display the TimePickerScreen in Android Studio's design preview.
-@Preview(showBackground = true) // Show a background in the preview.
-@Composable
-fun TimePickerScreenPreview() {
-    LeetAlarmTheme {
-        TimePickerScreen() // Call the same composable function to render the preview.
+
+class TextToSpeechHelper(context: Context) {
+
+    private var textToSpeech: TextToSpeech? = null
+
+    init {
+        textToSpeech = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                // Set language for the TTS engine
+                val result = textToSpeech?.setLanguage(Locale.US)
+                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    // Handle the case where the language is not supported
+                    Toast.makeText(context, "Language not supported", Toast.LENGTH_SHORT).show()
+
+                }
+                else {
+                    // Set default speech rate
+                    textToSpeech?.setSpeechRate(0.5f) // Normal speed
+                }
+            } else {
+                // Handle initialization error
+                Toast.makeText(context, "TTS could not initialize", Toast.LENGTH_SHORT).show()
+
+            }
+        }
+    }
+
+    fun speak(text: String) {
+        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+    }
+
+    fun stop() {
+        textToSpeech?.stop()
+    }
+
+    fun shutdown() {
+        textToSpeech?.shutdown()
     }
 }
